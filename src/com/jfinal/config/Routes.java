@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2014, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2016, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,8 +27,10 @@ import com.jfinal.core.Controller;
  */
 public abstract class Routes {
 	
-	private final Map<String, Class<? extends Controller>> map = new HashMap<String, Class<? extends Controller>>();
-	private final Map<String, String> viewPathMap = new HashMap<String, String>();
+	private static String baseViewPath;
+	
+	private Map<String, Class<? extends Controller>> map = new HashMap<String, Class<? extends Controller>>();
+	private Map<String, String> viewPathMap = new HashMap<String, String>();
 	
 	/**
 	 * you must implement config method and use add method to config route
@@ -38,8 +40,16 @@ public abstract class Routes {
 	public Routes add(Routes routes) {
 		if (routes != null) {
 			routes.config();	// very important!!!
-			map.putAll(routes.map);
-			viewPathMap.putAll(routes.viewPathMap);
+			
+			for (Entry<String, Class<? extends Controller>> e : routes.map.entrySet()) {
+				String controllerKey = e.getKey();
+				if (this.map.containsKey(controllerKey)) {
+					throw new IllegalArgumentException("The controllerKey already exists: " + controllerKey); 
+				}
+				
+				this.map.put(controllerKey, e.getValue());
+				this.viewPathMap.put(controllerKey, routes.getViewPath(controllerKey));
+			}
 		}
 		return this;
 	}
@@ -86,11 +96,11 @@ public abstract class Routes {
 	
 	/**
 	 * Add url mapping to controller. The view path is controllerKey
-	 * @param controllerkey A key can find controller
+	 * @param controllerKey A key can find controller
 	 * @param controllerClass Controller Class
 	 */
-	public Routes add(String controllerkey, Class<? extends Controller> controllerClass) {
-		return add(controllerkey, controllerClass, controllerkey);
+	public Routes add(String controllerKey, Class<? extends Controller> controllerClass) {
+		return add(controllerKey, controllerClass, controllerKey);
 	}
 	
 	public Set<Entry<String, Class<? extends Controller>>> getEntrySet() {
@@ -100,8 +110,6 @@ public abstract class Routes {
 	public String getViewPath(String key) {
 		return viewPathMap.get(key);
 	}
-	
-	private static String baseViewPath;
 	
 	/**
 	 * Set the base path for all views
@@ -120,6 +128,14 @@ public abstract class Routes {
 			baseViewPath = baseViewPath.substring(0, baseViewPath.length() - 1);
 		
 		Routes.baseViewPath = baseViewPath;
+	}
+	
+	public void clear() {
+		map.clear();
+		viewPathMap.clear();
+		
+		map = null;
+		viewPathMap = null;
 	}
 }
 

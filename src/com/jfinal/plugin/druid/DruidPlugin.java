@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2014, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2016, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import java.util.List;
 import javax.sql.DataSource;
 import com.alibaba.druid.filter.Filter;
 import com.alibaba.druid.pool.DruidDataSource;
-import com.jfinal.kit.StringKit;
+import com.jfinal.kit.StrKit;
 import com.jfinal.plugin.IPlugin;
 import com.jfinal.plugin.activerecord.IDataSourceProvider;
 
@@ -35,7 +35,7 @@ public class DruidPlugin implements IPlugin, IDataSourceProvider {
 	private String url;
 	private String username;
 	private String password;
-	private String driverClass = "com.mysql.jdbc.Driver";
+	private String driverClass = null;	// 由 "com.mysql.jdbc.Driver" 改为 null 让 druid 自动探测 driverClass 值
 	
 	// 初始连接池大小、最小空闲连接数、最大活跃连接数
 	private int initialSize = 10;
@@ -81,6 +81,7 @@ public class DruidPlugin implements IPlugin, IDataSourceProvider {
 	private List<Filter> filterList;
 	
 	private DruidDataSource ds;
+	private boolean isStarted = false;
 	
 	public DruidPlugin(String url, String username, String password) {
 		this.url = url;
@@ -124,12 +125,16 @@ public class DruidPlugin implements IPlugin, IDataSourceProvider {
 	}
 	
 	public boolean start() {
+		if (isStarted)
+			return true;
+		
 		ds = new DruidDataSource();
 		
 		ds.setUrl(url);
 		ds.setUsername(username);
 		ds.setPassword(password);
-		ds.setDriverClassName(driverClass);
+		if (driverClass != null)
+			ds.setDriverClassName(driverClass);
 		ds.setInitialSize(initialSize);
 		ds.setMinIdle(minIdle);
 		ds.setMaxActive(maxActive);
@@ -150,10 +155,12 @@ public class DruidPlugin implements IPlugin, IDataSourceProvider {
 		//只要maxPoolPreparedStatementPerConnectionSize>0,poolPreparedStatements就会被自动设定为true，参照druid的源码
 		ds.setMaxPoolPreparedStatementPerConnectionSize(maxPoolPreparedStatementPerConnectionSize);
 		
-		if (StringKit.notBlank(filters))
+		if (StrKit.notBlank(filters))
 			try {ds.setFilters(filters);} catch (SQLException e) {throw new RuntimeException(e);}
 		
 		addFilterList(ds);
+		
+		isStarted = true;
 		return true;
 	}
 	
@@ -177,6 +184,9 @@ public class DruidPlugin implements IPlugin, IDataSourceProvider {
 	public boolean stop() {
 		if (ds != null)
 			ds.close();
+		
+		ds = null;
+		isStarted = false;
 		return true;
 	}
 	

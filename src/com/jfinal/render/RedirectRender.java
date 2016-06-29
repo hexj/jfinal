@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2014, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2016, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@ import com.jfinal.core.JFinal;
  */
 public class RedirectRender extends Render {
 	
-	private static final long serialVersionUID = 1812102713097864255L;
 	private String url;
 	private boolean withQueryString;
 	private static final String contextPath = getContxtPath();
@@ -44,21 +43,33 @@ public class RedirectRender extends Render {
 		this.withQueryString =  withQueryString;
 	}
 	
-	public void render() {
-		if (contextPath != null && url.indexOf("://") == -1)
-			url = contextPath + url;
+	public String buildFinalUrl() {
+		String result;
+		if (contextPath != null && url.indexOf("://") == -1) {
+			result = contextPath + url;
+		} else {
+			result = url;
+		}
 		
 		if (withQueryString) {
 			String queryString = request.getQueryString();
-			if (queryString != null)
-				if (url.indexOf("?") == -1)
-					url = url + "?" + queryString;
-				else
-					url = url + "&" + queryString;
+			if (queryString != null) {
+				if (result.indexOf("?") == -1) {
+					result = result + "?" + queryString;
+				} else {
+					result = result + "&" + queryString;
+				}
+			}
 		}
 		
+		return result;
+	}
+	
+	public void render() {
+		String finalUrl = buildFinalUrl();
+		
 		try {
-			response.sendRedirect(url);	// always 302
+			response.sendRedirect(finalUrl);	// always 302
 		} catch (IOException e) {
 			throw new RenderException(e);
 		}

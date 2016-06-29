@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2014, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2016, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,8 @@ package com.jfinal.ext.handler;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import com.jfinal.handler.Handler;
-import com.jfinal.kit.StringKit;
+import com.jfinal.kit.HandlerKit;
+import com.jfinal.kit.StrKit;
 
 /**
  * FakeStaticHandler.
@@ -33,15 +34,25 @@ public class FakeStaticHandler extends Handler {
 	}
 	
 	public FakeStaticHandler(String viewPostfix) {
-		if (StringKit.isBlank(viewPostfix))
+		if (StrKit.isBlank(viewPostfix))
 			throw new IllegalArgumentException("viewPostfix can not be blank.");
 		this.viewPostfix = viewPostfix;
 	}
 	
 	public void handle(String target, HttpServletRequest request, HttpServletResponse response, boolean[] isHandled) {
+		if ("/".equals(target)) {
+			next.handle(target, request, response, isHandled);
+			return;
+		}
+		
+		if (target.indexOf('.') == -1) {
+			HandlerKit.renderError404(request, response, isHandled);
+			return ;
+		}
+		
 		int index = target.lastIndexOf(viewPostfix);
 		if (index != -1)
 			target = target.substring(0, index);
-		nextHandler.handle(target, request, response, isHandled);
+		next.handle(target, request, response, isHandled);
 	}
 }

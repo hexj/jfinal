@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2014, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2016, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import javax.servlet.http.HttpServletRequest;
 import com.jfinal.aop.Interceptor;
-import com.jfinal.core.ActionInvocation;
+import com.jfinal.aop.Invocation;
 import com.jfinal.core.Controller;
 import com.jfinal.render.Render;
 
@@ -36,8 +36,8 @@ import com.jfinal.render.Render;
  */
 public class CacheInterceptor implements Interceptor {
 	
-	private static final String renderKey = "$renderKey$";
-	private static volatile ConcurrentHashMap<String, ReentrantLock> lockMap = new ConcurrentHashMap<String, ReentrantLock>();
+	private static final String renderKey = "_renderKey";
+	private static ConcurrentHashMap<String, ReentrantLock> lockMap = new ConcurrentHashMap<String, ReentrantLock>();
 	
 	private ReentrantLock getLock(String key) {
 		ReentrantLock lock = lockMap.get(key);
@@ -49,10 +49,10 @@ public class CacheInterceptor implements Interceptor {
 		return previousLock == null ? lock : previousLock;
 	}
 	
-	final public void intercept(ActionInvocation ai) {
-		Controller controller = ai.getController();
-		String cacheName = buildCacheName(ai, controller);
-		String cacheKey = buildCacheKey(ai, controller);
+	final public void intercept(Invocation inv) {
+		Controller controller = inv.getController();
+		String cacheName = buildCacheName(inv, controller);
+		String cacheKey = buildCacheKey(inv, controller);
 		Map<String, Object> cacheData = CacheKit.get(cacheName, cacheKey);
 		if (cacheData == null) {
 			Lock lock = getLock(cacheName);
@@ -60,7 +60,7 @@ public class CacheInterceptor implements Interceptor {
 			try {
 				cacheData = CacheKit.get(cacheName, cacheKey);
 				if (cacheData == null) {
-					ai.invoke();
+					inv.invoke();
 					cacheAction(cacheName, cacheKey, controller);
 					return ;
 				}
@@ -74,16 +74,16 @@ public class CacheInterceptor implements Interceptor {
 	}
 	
 	// TODO 考虑与 EvictInterceptor 一样强制使用  @CacheName
-	private String buildCacheName(ActionInvocation ai, Controller controller) {
-		CacheName cacheName = ai.getMethod().getAnnotation(CacheName.class);
+	private String buildCacheName(Invocation inv, Controller controller) {
+		CacheName cacheName = inv.getMethod().getAnnotation(CacheName.class);
 		if (cacheName != null)
 			return cacheName.value();
 		cacheName = controller.getClass().getAnnotation(CacheName.class);
-		return (cacheName != null) ? cacheName.value() : ai.getActionKey();
+		return (cacheName != null) ? cacheName.value() : inv.getActionKey();
 	}
 	
-	private String buildCacheKey(ActionInvocation ai, Controller controller) {
-		StringBuilder sb = new StringBuilder(ai.getActionKey());
+	private String buildCacheKey(Invocation inv, Controller controller) {
+		StringBuilder sb = new StringBuilder(inv.getActionKey());
 		String urlPara = controller.getPara();
 		if (urlPara != null)
 			sb.append("/").append(urlPara);
@@ -102,7 +102,10 @@ public class CacheInterceptor implements Interceptor {
 			cacheData.put(name, request.getAttribute(name));
 		}
 		
-		cacheData.put(renderKey, controller.getRender());		// cache render
+		Render render = controller.getRender();
+		if (render != null) {
+			cacheData.put(renderKey, new RenderInfo(render));		// cache RenderInfo
+		}
 		CacheKit.put(cacheName, cacheKey, cacheData);
 	}
 	
@@ -115,9 +118,13 @@ public class CacheInterceptor implements Interceptor {
 		}
 		request.removeAttribute(renderKey);
 		
-		controller.render((Render)cacheData.get(renderKey));		// set render from cacheData
+		RenderInfo renderInfo = (RenderInfo)cacheData.get(renderKey);
+		if (renderInfo != null) {
+			controller.render(renderInfo.createRender());		// set render from cacheData
+		}
 	}
 }
+
 
 
 

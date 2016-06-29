@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2014, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2016, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,32 +16,56 @@
 
 package com.jfinal.upload;
 
+import java.io.File;
+import com.jfinal.kit.LogKit;
+import com.jfinal.kit.PathKit;
+import com.jfinal.kit.StrKit;
+import com.oreilly.servlet.multipart.FileRenamePolicy;
+
 /**
  * OreillyCos.
  */
 public class OreillyCos {
 	
-	private static Boolean isMultipartSupported = null;
-	
-	public static boolean isMultipartSupported() {
-		if (isMultipartSupported == null) {
-			detectOreillyCos();
+	public static void init(String uploadPath, int maxPostSize, String encoding) {
+		if (StrKit.isBlank(uploadPath)) {
+			throw new IllegalArgumentException("uploadPath can not be blank.");
 		}
-		return isMultipartSupported;
-	}
-	
-	public static void init(String saveDirectory, int maxPostSize, String encoding) {
-		if (isMultipartSupported()) {
-			MultipartRequest.init(saveDirectory, maxPostSize, encoding);
-		}
-	}
-	
-	private static void detectOreillyCos() {
 		try {
 			Class.forName("com.oreilly.servlet.MultipartRequest");
-			isMultipartSupported = true;
+			doInit(uploadPath, maxPostSize, encoding);
 		} catch (ClassNotFoundException e) {
-			isMultipartSupported = false;
+			LogKit.logNothing(e);
 		}
 	}
+	
+	public static void setFileRenamePolicy(FileRenamePolicy fileRenamePolicy) {
+		if (fileRenamePolicy == null) {
+			throw new IllegalArgumentException("fileRenamePolicy can not be null.");
+		}
+		MultipartRequest.fileRenamePolicy = fileRenamePolicy;
+	}
+	
+	private static void doInit(String uploadPath, int maxPostSize, String encoding) {
+		uploadPath = uploadPath.trim();
+		uploadPath = uploadPath.replaceAll("\\\\", "/");
+		
+		String baseUploadPath;
+		if (PathKit.isAbsolutelyPath(uploadPath)) {
+			baseUploadPath = uploadPath;
+		} else {
+			baseUploadPath = PathKit.getWebRootPath() + File.separator + uploadPath;
+		}
+		
+		// remove "/" postfix
+		if (baseUploadPath.equals("/") == false) {
+			if (baseUploadPath.endsWith("/")) {
+				baseUploadPath = baseUploadPath.substring(0, baseUploadPath.length() - 1);
+			}
+		}
+		
+		MultipartRequest.init(baseUploadPath, maxPostSize, encoding);
+	}
 }
+
+

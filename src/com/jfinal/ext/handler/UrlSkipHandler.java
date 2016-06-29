@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2014, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2016, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import java.util.regex.Pattern;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import com.jfinal.handler.Handler;
-import com.jfinal.kit.StringKit;
+import com.jfinal.kit.StrKit;
 
 /**
  * Skip the excluded url request from browser.
@@ -33,7 +33,7 @@ public class UrlSkipHandler extends Handler {
 	private Pattern skipedUrlPattern;
 	
 	public UrlSkipHandler(String skipedUrlRegx, boolean isCaseSensitive) {
-		if (StringKit.isBlank(skipedUrlRegx))
+		if (StrKit.isBlank(skipedUrlRegx))
 			throw new IllegalArgumentException("The para excludedUrlRegx can not be blank.");
 		skipedUrlPattern = isCaseSensitive ? Pattern.compile(skipedUrlRegx) : Pattern.compile(skipedUrlRegx, Pattern.CASE_INSENSITIVE);
 	}
@@ -42,7 +42,7 @@ public class UrlSkipHandler extends Handler {
 		if (skipedUrlPattern.matcher(target).matches())
 			return ;
 		else
-			nextHandler.handle(target, request, response, isHandled);
+			next.handle(target, request, response, isHandled);
 	}
 }
 

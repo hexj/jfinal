@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2014, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2016, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,13 @@ import java.util.List;
  */
 class TableBuilder {
 	
-	static boolean build(List<Table> tableList, Config config) {
+	private JavaType javaType = new JavaType();
+	
+	void build(List<Table> tableList, Config config) {
+		if (tableList.size() == 0) {
+			return ;
+		}
+		
 		Table temp = null;
 		Connection conn = null;
 		try {
@@ -41,10 +47,10 @@ class TableBuilder {
 				tableMapping.putTable(table);
 				DbKit.addModelToConfigMapping(table.getModelClass(), config);
 			}
-			return true;
 		} catch (Exception e) {
-			if (temp != null)
+			if (temp != null) {
 				System.err.println("Can not create Table object, maybe the table " + temp.getName() + " is not exists.");
+			}
 			throw new ActiveRecordException(e);
 		}
 		finally {
@@ -53,10 +59,11 @@ class TableBuilder {
 	}
 	
 	@SuppressWarnings("unchecked")
-	private static void doBuild(Table table, Connection conn, Config config) throws SQLException {
+	private void doBuild(Table table, Connection conn, Config config) throws SQLException {
 		table.setColumnTypeMap(config.containerFactory.getAttrsMap());
-		if (table.getPrimaryKey() == null)
+		if (table.getPrimaryKey() == null) {
 			table.setPrimaryKey(config.dialect.getDefaultPrimaryKey());
+		}
 		
 		String sql = config.dialect.forTableBuilderDoBuild(table.getName());
 		Statement stm = conn.createStatement();
@@ -66,58 +73,14 @@ class TableBuilder {
 		for (int i=1; i<=rsmd.getColumnCount(); i++) {
 			String colName = rsmd.getColumnName(i);
 			String colClassName = rsmd.getColumnClassName(i);
-			if ("java.lang.String".equals(colClassName)) {
-				// varchar, char, enum, set, text, tinytext, mediumtext, longtext
-				table.setColumnType(colName, java.lang.String.class);
-			}
-			else if ("java.lang.Integer".equals(colClassName)) {
-				// int, integer, tinyint, smallint, mediumint
-				table.setColumnType(colName, java.lang.Integer.class);
-			}
-			else if ("java.lang.Long".equals(colClassName)) {
-				// bigint
-				table.setColumnType(colName, java.lang.Long.class);
-			}
-			// else if ("java.util.Date".equals(colClassName)) {		// java.util.Data can not be returned
-				// java.sql.Date, java.sql.Time, java.sql.Timestamp all extends java.util.Data so getDate can return the three types data
-				// result.addInfo(colName, java.util.Date.class);
-			// }
-			else if ("java.sql.Date".equals(colClassName)) {
-				// date, year
-				table.setColumnType(colName, java.sql.Date.class);
-			}
-			else if ("java.lang.Double".equals(colClassName)) {
-				// real, double
-				table.setColumnType(colName, java.lang.Double.class);
-			}
-			else if ("java.lang.Float".equals(colClassName)) {
-				// float
-				table.setColumnType(colName, java.lang.Float.class);
-			}
-			else if ("java.lang.Boolean".equals(colClassName)) {
-				// bit
-				table.setColumnType(colName, java.lang.Boolean.class);
-			}
-			else if ("java.sql.Time".equals(colClassName)) {
-				// time
-				table.setColumnType(colName, java.sql.Time.class);
-			}
-			else if ("java.sql.Timestamp".equals(colClassName)) {
-				// timestamp, datetime
-				table.setColumnType(colName, java.sql.Timestamp.class);
-			}
-			else if ("java.math.BigDecimal".equals(colClassName)) {
-				// decimal, numeric
-				table.setColumnType(colName, java.math.BigDecimal.class);
-			}
-			else if ("[B".equals(colClassName)) {
-				// binary, varbinary, tinyblob, blob, mediumblob, longblob
-				// qjd project: print_info.content varbinary(61800);
-				table.setColumnType(colName, byte[].class);
+			
+			Class<?> clazz = javaType.getType(colClassName);
+			if (clazz != null) {
+				table.setColumnType(colName, clazz);
 			}
 			else {
 				int type = rsmd.getColumnType(i);
-				if (type == Types.BLOB) {
+				if (type == Types.BINARY || type == Types.VARBINARY || type == Types.BLOB) {
 					table.setColumnType(colName, byte[].class);
 				}
 				else if (type == Types.CLOB || type == Types.NCLOB) {
@@ -135,3 +98,4 @@ class TableBuilder {
 		stm.close();
 	}
 }
+

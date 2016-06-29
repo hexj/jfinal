@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2014, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2016, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,16 +21,17 @@ import java.text.ParseException;
 import java.util.Date;
 import java.util.Enumeration;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
-import static com.jfinal.core.Const.I18N_LOCALE;
-import com.jfinal.i18n.I18N;
-import com.jfinal.kit.StringKit;
+import com.jfinal.aop.Enhancer;
+import com.jfinal.aop.Interceptor;
+import com.jfinal.kit.StrKit;
+import com.jfinal.render.ContentType;
+import com.jfinal.render.JsonRender;
 import com.jfinal.render.Render;
 import com.jfinal.render.RenderFactory;
 import com.jfinal.upload.MultipartRequest;
@@ -59,6 +60,14 @@ public abstract class Controller {
 		this.request = request;
 		this.response = response;
 		this.urlPara = urlPara;
+	}
+	
+	public void setHttpServletRequest(HttpServletRequest request) {
+		this.request = request;
+	}
+	
+	public void setHttpServletResponse(HttpServletResponse response) {
+		this.response = response;
 	}
 	
 	public void setUrlPara(String urlPara) {
@@ -168,6 +177,16 @@ public abstract class Controller {
 		return result;
 	}
 	
+	public Long[] getParaValuesToLong(String name) {
+		String[] values = request.getParameterValues(name);
+		if (values == null)
+			return null;
+		Long[] result = new Long[values.length];
+		for (int i=0; i<result.length; i++)
+			result[i] = Long.parseLong(values[i]);
+		return result;
+	}
+	
 	/**
 	 * Returns an Enumeration containing the names of the attributes available to this request.
 	 * This method returns an empty Enumeration if the request has no attributes available to it. 
@@ -205,11 +224,17 @@ public abstract class Controller {
 	}
 	
 	private Integer toInt(String value, Integer defaultValue) {
-		if (value == null || "".equals(value.trim()))
-			return defaultValue;
-		if (value.startsWith("N") || value.startsWith("n"))
-			return -Integer.parseInt(value.substring(1));
-		return Integer.parseInt(value);
+		try {
+			if (value == null || "".equals(value.trim()))
+				return defaultValue;
+			value = value.trim();
+			if (value.startsWith("N") || value.startsWith("n"))
+				return -Integer.parseInt(value.substring(1));
+			return Integer.parseInt(value);
+		}
+		catch (Exception e) {
+			throw new ActionException(404, renderFactory.getErrorRender(404),  "Can not parse the parameter \"" + value + "\" to Integer value.");
+		}
 	}
 	
 	/**
@@ -231,11 +256,17 @@ public abstract class Controller {
 	}
 	
 	private Long toLong(String value, Long defaultValue) {
-		if (value == null || "".equals(value.trim()))
-			return defaultValue;
-		if (value.startsWith("N") || value.startsWith("n"))
-			return -Long.parseLong(value.substring(1));
-		return Long.parseLong(value);
+		try {
+			if (value == null || "".equals(value.trim()))
+				return defaultValue;
+			value = value.trim();
+			if (value.startsWith("N") || value.startsWith("n"))
+				return -Long.parseLong(value.substring(1));
+			return Long.parseLong(value);
+		}
+		catch (Exception e) {
+			throw new ActionException(404, renderFactory.getErrorRender(404),  "Can not parse the parameter \"" + value + "\" to Long value.");
+		}
 	}
 	
 	/**
@@ -264,7 +295,7 @@ public abstract class Controller {
 			return Boolean.TRUE;
 		else if ("0".equals(value) || "false".equals(value))
 			return Boolean.FALSE;
-		throw new RuntimeException("Can not parse the parameter \"" + value + "\" to boolean value.");
+		throw new ActionException(404, renderFactory.getErrorRender(404), "Can not parse the parameter \"" + value + "\" to Boolean value.");
 	}
 	
 	/**
@@ -307,12 +338,12 @@ public abstract class Controller {
 	}
 	
 	private Date toDate(String value, Date defaultValue) {
-		if (value == null || "".equals(value.trim()))
-			return defaultValue;
 		try {
-			return new java.text.SimpleDateFormat("yyyy-MM-dd").parse(value);
-		} catch (ParseException e) {
-			throw new RuntimeException(e);
+			if (value == null || "".equals(value.trim()))
+				return defaultValue;
+			return new java.text.SimpleDateFormat("yyyy-MM-dd").parse(value.trim());
+		} catch (Exception e) {
+			throw new ActionException(404, renderFactory.getErrorRender(404),  "Can not parse the parameter \"" + value + "\" to Date value.");
 		}
 	}
 	
@@ -385,7 +416,7 @@ public abstract class Controller {
 	 * @param value a Object specifying the value stored in session
 	 */
 	public Controller setSessionAttr(String key, Object value) {
-		request.getSession().setAttribute(key, value);
+		request.getSession(true).setAttribute(key, value);
 		return this;
 	}
 	
@@ -468,6 +499,27 @@ public abstract class Controller {
 	}
 	
 	/**
+	 * Set Cookie.
+	 * @param name cookie name
+	 * @param value cookie value
+	 * @param maxAgeInSeconds -1: clear cookie when close browser. 0: clear cookie immediately.  n>0 : max age in n seconds.
+	 * @param isHttpOnly true if this cookie is to be marked as HttpOnly, false otherwise
+	 */
+	public Controller setCookie(String name, String value, int maxAgeInSeconds, boolean isHttpOnly) {
+		return doSetCookie(name, value, maxAgeInSeconds, null, null, isHttpOnly);
+	}
+	
+	/**
+	 * Set Cookie.
+	 * @param name cookie name
+	 * @param value cookie value
+	 * @param maxAgeInSeconds -1: clear cookie when close browser. 0: clear cookie immediately.  n>0 : max age in n seconds.
+	 */
+	public Controller setCookie(String name, String value, int maxAgeInSeconds) {
+		return doSetCookie(name, value, maxAgeInSeconds, null, null, null);
+	}
+	
+	/**
 	 * Set Cookie to response.
 	 */
 	public Controller setCookie(Cookie cookie) {
@@ -481,10 +533,21 @@ public abstract class Controller {
 	 * @param value cookie value
 	 * @param maxAgeInSeconds -1: clear cookie when close browser. 0: clear cookie immediately.  n>0 : max age in n seconds.
 	 * @param path see Cookie.setPath(String)
+	 * @param isHttpOnly true if this cookie is to be marked as HttpOnly, false otherwise
+	 */
+	public Controller setCookie(String name, String value, int maxAgeInSeconds, String path, boolean isHttpOnly) {
+		return doSetCookie(name, value, maxAgeInSeconds, path, null, isHttpOnly);
+	}
+	
+	/**
+	 * Set Cookie to response.
+	 * @param name cookie name
+	 * @param value cookie value
+	 * @param maxAgeInSeconds -1: clear cookie when close browser. 0: clear cookie immediately.  n>0 : max age in n seconds.
+	 * @param path see Cookie.setPath(String)
 	 */
 	public Controller setCookie(String name, String value, int maxAgeInSeconds, String path) {
-		setCookie(name, value, maxAgeInSeconds, path, null);
-		return this;
+		return doSetCookie(name, value, maxAgeInSeconds, path, null, null);
 	}
 	
 	/**
@@ -494,46 +557,49 @@ public abstract class Controller {
 	 * @param maxAgeInSeconds -1: clear cookie when close browser. 0: clear cookie immediately.  n>0 : max age in n seconds.
 	 * @param path see Cookie.setPath(String)
 	 * @param domain the domain name within which this cookie is visible; form is according to RFC 2109
+	 * @param isHttpOnly true if this cookie is to be marked as HttpOnly, false otherwise
 	 */
-	public Controller setCookie(String name, String value, int maxAgeInSeconds, String path, String domain) {
-		Cookie cookie = new Cookie(name, value);
-		if (domain != null)
-			cookie.setDomain(domain);
-		cookie.setMaxAge(maxAgeInSeconds);
-		cookie.setPath(path);
-		response.addCookie(cookie);
-		return this;
+	public Controller setCookie(String name, String value, int maxAgeInSeconds, String path, String domain, boolean isHttpOnly) {
+		return doSetCookie(name, value, maxAgeInSeconds, path, domain, isHttpOnly);
 	}
 	
 	/**
-	 * Set Cookie with path = "/".
-	 */
-	public Controller setCookie(String name, String value, int maxAgeInSeconds) {
-		setCookie(name, value, maxAgeInSeconds, "/", null);
-		return this;
-	}
-	
-	/**
-	 * Remove Cookie with path = "/".
+	 * Remove Cookie.
 	 */
 	public Controller removeCookie(String name) {
-		setCookie(name, null, 0, "/", null);
-		return this;
+		return doSetCookie(name, null, 0, null, null, null);
 	}
 	
 	/**
 	 * Remove Cookie.
 	 */
 	public Controller removeCookie(String name, String path) {
-		setCookie(name, null, 0, path, null);
-		return this;
+		return doSetCookie(name, null, 0, path, null, null);
 	}
 	
 	/**
 	 * Remove Cookie.
 	 */
 	public Controller removeCookie(String name, String path, String domain) {
-		setCookie(name, null, 0, path, domain);
+		return doSetCookie(name, null, 0, path, domain, null);
+	}
+	
+	private Controller doSetCookie(String name, String value, int maxAgeInSeconds, String path, String domain, Boolean isHttpOnly) {
+		Cookie cookie = new Cookie(name, value);
+		cookie.setMaxAge(maxAgeInSeconds);
+		// set the default path value to "/"
+		if (path == null) {
+			path = "/";
+		}
+		cookie.setPath(path);
+		
+		if (domain != null) {
+			cookie.setDomain(domain);
+		}
+		if (isHttpOnly != null) {
+			cookie.setHttpOnly(isHttpOnly);
+		}
+		response.addCookie(cookie);
 		return this;
 	}
 	
@@ -622,69 +688,84 @@ public abstract class Controller {
 	 * Get model from http request.
 	 */
 	public <T> T getModel(Class<T> modelClass) {
-		return (T)ModelInjector.inject(modelClass, request, false);
+		return (T)Injector.injectModel(modelClass, request, false);
+	}
+	
+	public <T> T getModel(Class<T> modelClass, boolean skipConvertError) {
+		return (T)Injector.injectModel(modelClass, request, skipConvertError);
 	}
 	
 	/**
 	 * Get model from http request.
 	 */
 	public <T> T getModel(Class<T> modelClass, String modelName) {
-		return (T)ModelInjector.inject(modelClass, modelName, request, false);
+		return (T)Injector.injectModel(modelClass, modelName, request, false);
+	}
+	
+	public <T> T getModel(Class<T> modelClass, String modelName, boolean skipConvertError) {
+		return (T)Injector.injectModel(modelClass, modelName, request, skipConvertError);
+	}
+	
+	public <T> T getBean(Class<T> beanClass) {
+		return (T)Injector.injectBean(beanClass, request, false);
+	}
+	
+	public <T> T getBean(Class<T> beanClass, boolean skipConvertError) {
+		return (T)Injector.injectBean(beanClass, request, skipConvertError);
+	}
+	
+	public <T> T getBean(Class<T> beanClass, String beanName) {
+		return (T)Injector.injectBean(beanClass, beanName, request, false);
+	}
+	
+	public <T> T getBean(Class<T> beanClass, String beanName, boolean skipConvertError) {
+		return (T)Injector.injectBean(beanClass, beanName, request, skipConvertError);
 	}
 	
 	// TODO public <T> List<T> getModels(Class<T> modelClass, String modelName) {}
 	
 	// --------
-	private MultipartRequest multipartRequest;
 	
 	/**
 	 * Get upload file from multipart request.
 	 */
-	public List<UploadFile> getFiles(String saveDirectory, Integer maxPostSize, String encoding) {
-		if (multipartRequest == null) {
-			multipartRequest = new MultipartRequest(request, saveDirectory, maxPostSize, encoding);
-			request = multipartRequest;
-		}
-		return multipartRequest.getFiles();
+	public List<UploadFile> getFiles(String uploadPath, Integer maxPostSize, String encoding) {
+		if (request instanceof MultipartRequest == false)
+			request = new MultipartRequest(request, uploadPath, maxPostSize, encoding);
+		return ((MultipartRequest)request).getFiles();
 	}
 	
-	public UploadFile getFile(String parameterName, String saveDirectory, Integer maxPostSize, String encoding) {
-		getFiles(saveDirectory, maxPostSize, encoding);
+	public UploadFile getFile(String parameterName, String uploadPath, Integer maxPostSize, String encoding) {
+		getFiles(uploadPath, maxPostSize, encoding);
 		return getFile(parameterName);
 	}
 	
-	public List<UploadFile> getFiles(String saveDirectory, int maxPostSize) {
-		if (multipartRequest == null) {
-			multipartRequest = new MultipartRequest(request, saveDirectory, maxPostSize);
-			request = multipartRequest;
-		}
-		return multipartRequest.getFiles();
+	public List<UploadFile> getFiles(String uploadPath, int maxPostSize) {
+		if (request instanceof MultipartRequest == false)
+			request = new MultipartRequest(request, uploadPath, maxPostSize);
+		return ((MultipartRequest)request).getFiles();
 	}
 	
-	public UploadFile getFile(String parameterName, String saveDirectory, int maxPostSize) {
-		getFiles(saveDirectory, maxPostSize);
+	public UploadFile getFile(String parameterName, String uploadPath, int maxPostSize) {
+		getFiles(uploadPath, maxPostSize);
 		return getFile(parameterName);
 	}
 	
-	public List<UploadFile> getFiles(String saveDirectory) {
-		if (multipartRequest == null) {
-			multipartRequest = new MultipartRequest(request, saveDirectory);
-			request = multipartRequest;
-		}
-		return multipartRequest.getFiles();
+	public List<UploadFile> getFiles(String uploadPath) {
+		if (request instanceof MultipartRequest == false)
+			request = new MultipartRequest(request, uploadPath);
+		return ((MultipartRequest)request).getFiles();
 	}
 	
-	public UploadFile getFile(String parameterName, String saveDirectory) {
-		getFiles(saveDirectory);
+	public UploadFile getFile(String parameterName, String uploadPath) {
+		getFiles(uploadPath);
 		return getFile(parameterName);
 	}
 	
 	public List<UploadFile> getFiles() {
-		if (multipartRequest == null) {
-			multipartRequest = new MultipartRequest(request);
-			request = multipartRequest;
-		}
-		return multipartRequest.getFiles();
+		if (request instanceof MultipartRequest == false)
+			request = new MultipartRequest(request);
+		return ((MultipartRequest)request).getFiles();
 	}
 	
 	public UploadFile getFile() {
@@ -700,40 +781,6 @@ public abstract class Controller {
 			}
 		}
 		return null;
-	}
-	
-	// i18n features --------
-	/**
-	 * Write Local to cookie
-	 */
-	public Controller setLocaleToCookie(Locale locale) {
-		setCookie(I18N_LOCALE, locale.toString(), I18N.getI18nMaxAgeOfCookie());
-		return this;
-	}
-	
-	public Controller setLocaleToCookie(Locale locale, int maxAge) {
-		setCookie(I18N_LOCALE, locale.toString(), maxAge);
-		return this;
-	}
-	
-	public String getText(String key) {
-		return I18N.getText(key, getLocaleFromCookie());
-	}
-	
-	public String getText(String key, String defaultValue) {
-		return I18N.getText(key, defaultValue, getLocaleFromCookie());
-	}
-	
-	private Locale getLocaleFromCookie() {
-		Cookie cookie = getCookieObject(I18N_LOCALE);
-		if (cookie != null) {
-			return I18N.localeFromString(cookie.getValue());
-		}
-		else {
-			Locale defaultLocale = I18N.getDefaultLocale();
-			setLocaleToCookie(defaultLocale);
-			return I18N.localeFromString(defaultLocale.toString());
-		}
 	}
 	
 	/**
@@ -774,7 +821,7 @@ public abstract class Controller {
 		String[] values = request.getParameterValues(name);
 		if (values != null) {
 			if (values.length == 1)
-				try {request.setAttribute(name, TypeConverter.convert(type, values[0]));} catch (ParseException e) {}
+				try {request.setAttribute(name, TypeConverter.convert(type, values[0]));} catch (ParseException e) {com.jfinal.kit.LogKit.logNothing(e);}
 			else
 				request.setAttribute(name, values);
 		}
@@ -791,15 +838,35 @@ public abstract class Controller {
 		return this;
 	}
 	
-	public Controller keepModel(Class modelClass, String modelName) {
-		Object model = ModelInjector.inject(modelClass, modelName, request, true);
-		request.setAttribute(modelName, model);
+	public Controller keepModel(Class<? extends com.jfinal.plugin.activerecord.Model> modelClass, String modelName) {
+		if (StrKit.notBlank(modelName)) {
+			Object model = Injector.injectModel(modelClass, modelName, request, true);
+			request.setAttribute(modelName, model);
+		} else {
+			keepPara();
+		}
 		return this;
 	}
 	
-	public Controller keepModel(Class modelClass) {
-		String modelName = StringKit.firstCharToLowerCase(modelClass.getSimpleName());
+	public Controller keepModel(Class<? extends com.jfinal.plugin.activerecord.Model> modelClass) {
+		String modelName = StrKit.firstCharToLowerCase(modelClass.getSimpleName());
 		keepModel(modelClass, modelName);
+		return this;
+	}
+	
+	public Controller keepBean(Class<?> beanClass, String beanName) {
+		if (StrKit.notBlank(beanName)) {
+			Object bean = Injector.injectBean(beanClass, beanName, request, true);
+			request.setAttribute(beanName, bean);
+		} else {
+			keepPara();
+		}
+		return this;
+	}
+	
+	public Controller keepBean(Class<?> beanClass) {
+		String beanName = StrKit.firstCharToLowerCase(beanClass.getSimpleName());
+		keepBean(beanClass, beanName);
 		return this;
 	}
 	
@@ -964,7 +1031,7 @@ public abstract class Controller {
 	 * Example: renderJson(new User().set("name", "JFinal").set("age", 18));
 	 */
 	public void renderJson(Object object) {
-		render = renderFactory.getJsonRender(object);
+		render = object instanceof JsonRender ? (JsonRender)object : renderFactory.getJsonRender(object);
 	}
 	
 	/**
@@ -977,9 +1044,18 @@ public abstract class Controller {
 	/**
 	 * Render with text and content type.
 	 * <p>
-	 * Example: renderText("<user id='5888'>James</user>", "application/xml");
+	 * Example: renderText("&lt;user id='5888'&gt;James&lt;/user&gt;", "application/xml");
 	 */
 	public void renderText(String text, String contentType) {
+		render = renderFactory.getTextRender(text, contentType);
+	}
+	
+	/**
+	 * Render with text and ContentType.
+	 * <p>
+	 * Example: renderText("&lt;html&gt;Hello James&lt;/html&gt;", ContentType.HTML);
+	 */
+	public void renderText(String text, ContentType contentType) {
 		render = renderFactory.getTextRender(text, contentType);
 	}
 	
@@ -1081,16 +1157,105 @@ public abstract class Controller {
 	public void renderHtml(String htmlText) {
 		render = renderFactory.getHtmlRender(htmlText);
 	}
+	
+	/**
+	 * Render with xml view using freemarker.
+	 */
+	public void renderXml(String view) {
+		render = renderFactory.getXmlRender(view);
+	}
+	
+	public void renderCaptcha() {
+		render = renderFactory.getCaptchaRender();
+	}
+	
+	public boolean validateCaptcha(String paraName) {
+		return com.jfinal.render.CaptchaRender.validate(this, getPara(paraName));
+	}
+	
+	public void checkUrlPara(int minLength, int maxLength) {
+		getPara(0);
+		if (urlParaArray.length < minLength || urlParaArray.length > maxLength)
+			renderError(404);
+	}
+	
+	public void checkUrlPara(int length) {
+		checkUrlPara(length, length);
+	}
+	
+	// ---------
+	
+	public <T> T enhance(Class<T> targetClass) {
+		return (T)Enhancer.enhance(targetClass);
+	}
+	
+	public <T> T enhance(Class<T> targetClass, Interceptor... injectInters) {
+		return (T)Enhancer.enhance(targetClass, injectInters);
+	}
+	
+	public <T> T enhance(Class<T> targetClass, Class<? extends Interceptor>... injectIntersClasses) {
+		return (T)Enhancer.enhance(targetClass, injectIntersClasses);
+	}
+	
+	public <T> T enhance(Class<T> targetClass, Class<? extends Interceptor> injectIntersClass) {
+		return (T)Enhancer.enhance(targetClass, injectIntersClass);
+	}
+	
+	public <T> T enhance(Class<T> targetClass, Class<? extends Interceptor> injectIntersClass1, Class<? extends Interceptor> injectIntersClass2) {
+		return (T)Enhancer.enhance(targetClass, injectIntersClass1, injectIntersClass2);
+	}
+	
+	public <T> T enhance(Class<T> targetClass, Class<? extends Interceptor> injectIntersClass1, Class<? extends Interceptor> injectIntersClass2, Class<? extends Interceptor> injectIntersClass3) {
+		return (T)Enhancer.enhance(targetClass, injectIntersClass1, injectIntersClass2, injectIntersClass3);
+	}
+	
+	public <T> T enhance(String singletonKey, Class<T> targetClass) {
+		return (T)Enhancer.enhance(singletonKey, targetClass);
+	}
+	
+	public <T> T enhance(String singletonKey, Class<T> targetClass, Interceptor... injectInters) {
+		return (T)Enhancer.enhance(singletonKey, targetClass, injectInters);
+	}
+	
+	public <T> T enhance(String singletonKey, Class<T> targetClass, Class<? extends Interceptor>... injectIntersClasses) {
+		return (T)Enhancer.enhance(singletonKey, targetClass, injectIntersClasses);
+	}
+	
+	public <T> T enhance(Object target) {
+		return (T)Enhancer.enhance(target);
+	}
+	
+	public <T> T enhance(Object target, Interceptor... injectInters) {
+		return (T)Enhancer.enhance(target, injectInters);
+	}
+	
+	public <T> T enhance(Object target, Class<? extends Interceptor>... injectIntersClasses) {
+		return (T)Enhancer.enhance(target, injectIntersClasses);
+	}
+	
+	public <T> T enhance(Object target, Class<? extends Interceptor> injectIntersClass) {
+		return (T)Enhancer.enhance(target, injectIntersClass);
+	}
+	
+	public <T> T enhance(Object target, Class<? extends Interceptor> injectIntersClass1, Class<? extends Interceptor> injectIntersClass2) {
+		return (T)Enhancer.enhance(target, injectIntersClass1, injectIntersClass2);
+	}
+	
+	public <T> T enhance(Object target, Class<? extends Interceptor> injectIntersClass1, Class<? extends Interceptor> injectIntersClass2, Class<? extends Interceptor> injectIntersClass3) {
+		return (T)Enhancer.enhance(target, injectIntersClass1, injectIntersClass2, injectIntersClass3);
+	}
+	
+	public <T> T enhance(String singletonKey, Object target) {
+		return (T)Enhancer.enhance(singletonKey, target);
+	}
+	
+	public <T> T enhance(String singletonKey, Object target, Interceptor... injectInters) {
+		return (T)Enhancer.enhance(singletonKey, target, injectInters);
+	}
+	
+	public <T> T enhance(String singletonKey, Object target, Class<? extends Interceptor>... injectIntersClasses) {
+		return (T)Enhancer.enhance(singletonKey, target, injectIntersClasses);
+	}
 }
-
-
-
-
-
-
-
-
-
-
 
 

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011-2014, James Zhan 詹波 (jfinal@126.com).
+ * Copyright (c) 2011-2016, James Zhan 詹波 (jfinal@126.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package com.jfinal.ext.handler;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import com.jfinal.handler.Handler;
-import com.jfinal.kit.StringKit;
+import com.jfinal.kit.StrKit;
 
 /**
  * Provide a context path to view if you need.
@@ -37,13 +37,13 @@ public class ContextPathHandler extends Handler {
 	}
 	
 	public ContextPathHandler(String contextPathName) {
-		if (StringKit.isBlank(contextPathName))
+		if (StrKit.isBlank(contextPathName))
 			throw new IllegalArgumentException("contextPathName can not be blank.");
 		this.contextPathName = contextPathName;
 	}
 	
 	public void handle(String target, HttpServletRequest request, HttpServletResponse response, boolean[] isHandled) {
 		request.setAttribute(contextPathName, request.getContextPath());
-		nextHandler.handle(target, request, response, isHandled);
+		next.handle(target, request, response, isHandled);
 	}
 }
